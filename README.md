@@ -4,21 +4,21 @@ Moteur tactique original pour **Code RPG**, inspire des principes de dungeon-cra
 
 > Ce depot n'integre aucun visuel, texte de regle, scenario, nom de personnage ou autre contenu proprietaire de HeroQuest. Le but est de disposer d'un moteur independant, extensible et juridiquement propre.
 
-## Version actuelle : V0.2
+## Version actuelle : V0.3
 
-La V0.2 ajoute au socle tactique :
+La V0.3 consolide la progression persistante :
 
-- brouillard de guerre persistant ;
-- vision locale et zones/salles decouvertes ;
-- passages secrets a rechercher puis ouvrir ;
-- pieges revelables/desarmables ;
-- inventaire porte par le moteur ;
-- or et butin ;
-- equipement avec bonus d'attaque/defense ;
-- XP, niveaux et progression des PV ;
-- monstres inactifs tant que leur zone n'a pas ete decouverte ;
-- interface Streamlit adaptee a l'exploration ;
-- 13 tests unitaires du moteur.
+- sauvegarde JSON versionnee (`schema_version: 1`) ;
+- identifiant unique de sauvegarde et dates de creation/mise a jour ;
+- restauration depuis une quete fraiche puis application de l'etat dynamique ;
+- positions, PV, XP, niveaux, or, inventaire et equipement des heros ;
+- etat des monstres, portes, passages secrets, pieges et coffres ;
+- brouillard de guerre et zones decouvertes ;
+- round et equipe active ;
+- bloc campagne pret pour les futures quetes liees ;
+- validation stricte des fichiers avant remplacement de la partie courante ;
+- import/export depuis Streamlit ;
+- 19 tests automatiques dont un round-trip complet sauvegarde -> chargement.
 
 La version publique stable est deployee ici :
 
@@ -31,6 +31,16 @@ python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
 streamlit run streamlit_app.py
 ```
+
+## Sauvegardes
+
+Dans l'interface Streamlit :
+
+- `Telecharger la sauvegarde` exporte un fichier JSON local ;
+- `Charger une sauvegarde` valide le fichier puis restaure la partie ;
+- une sauvegarde invalide ou provenant d'une quete inconnue est refusee sans remplacer la partie active.
+
+Le moteur de sauvegarde est dans `src/code_rpg_engine/savegame.py` et ne depend pas de Streamlit.
 
 ## Architecture
 
@@ -47,8 +57,6 @@ Le moteur reste decouple de l'interface. Une application Web, mobile, React ou u
 
 ## Deploiement Streamlit Community Cloud
 
-Configuration actuelle :
-
 ```text
 Repository : Jean-Philippe56520/Heroquest
 Branch     : main
@@ -58,20 +66,18 @@ URL stable : https://heroquest.streamlit.app
 
 ## Sources open source et inspiration
 
-Deux projets tiers sont conserves comme references techniques :
+Projets tiers conserves comme references techniques :
 
-- `hghero/HeroQuest` — LGPL-2.1, C++/Qt ;
-- `g1augusto/HeroQuestCS50Builder` — MIT, Python/Flask ;
-- `henriquesimoes/heroquest` — reference d'etude uniquement, aucune licence declaree.
+- `hghero/HeroQuest` - LGPL-2.1, C++/Qt ;
+- `g1augusto/HeroQuestCS50Builder` - MIT, Python/Flask ;
+- `henriquesimoes/heroquest` - reference d'etude uniquement, aucune licence declaree.
 
 Voir `THIRD_PARTY.md`, `UPSTREAM.lock.json` et `reference_sources/README.md`.
 
 ## Prochaines briques recommandees
 
-1. sorts, consommables et effets temporaires ;
-2. sauvegarde de campagne ;
-3. plusieurs quetes liees en campagne ;
-4. editeur de carte ;
-5. API FastAPI ;
-6. multijoueur temps reel ;
-7. couche evenementielle pour narration/LLM.
+1. personnages/classes persistants entre plusieurs quetes ;
+2. sorts, consommables et effets temporaires ;
+3. campagne multi-quetes ;
+4. choix narratifs et evenements persistants ;
+5. persistence serveur uniquement lorsque le jeu solo est solide.

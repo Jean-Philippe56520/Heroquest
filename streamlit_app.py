@@ -15,15 +15,21 @@ if str(SRC) not in sys.path:
 from code_rpg_engine.content import load_quest
 from code_rpg_engine.game import Game, RuleError
 from code_rpg_engine.models import Entity, Position, Team
+from code_rpg_engine.savegame import SaveGameError, build_save, dumps_save, loads_save, restore_game
 
 QUEST_PATH = ROOT / "content" / "quests" / "crypt_of_echoes.json"
+QUEST_PATHS = {"crypt-of-echoes": QUEST_PATH}
 
-st.set_page_config(page_title="Code RPG - Dungeon Engine", page_icon="⚔️", layout="wide")
+st.set_page_config(page_title="Heroquest", page_icon="⚔️", layout="wide")
 
 
 def new_game() -> Game:
-    quest = load_quest(QUEST_PATH)
-    return Game(quest=quest, rng=random.Random())
+    return Game(load_quest(QUEST_PATH), rng=random.Random())
+
+
+def new_save_identity(game: Game) -> dict[str, str]:
+    data = build_save(game)
+    return {"save_id": data["save_id"], "created_at": data["created_at"]}
 
 
 def ensure_state() -> None:
@@ -32,13 +38,43 @@ def ensure_state() -> None:
     if "selected_hero" not in st.session_state:
         st.session_state.selected_hero = "hero-warden"
     if "log" not in st.session_state:
-        st.session_state.log = ["La Crypte des Échos vous attend. Explorez sans savoir ce qui se cache au-delà des murs."]
+        st.session_state.log = ["La Crypte des Échos vous attend."]
+    if "save_identity" not in st.session_state:
+        st.session_state.save_identity = new_save_identity(st.session_state.game)
+    if "completed_quests" not in st.session_state:
+        st.session_state.completed_quests = []
 
 
 def reset_game() -> None:
-    st.session_state.game = new_game()
+    game = new_game()
+    st.session_state.game = game
     st.session_state.selected_hero = "hero-warden"
     st.session_state.log = ["Nouvelle expédition commencée."]
+    st.session_state.save_identity = new_save_identity(game)
+    st.session_state.completed_quests = []
+
+
+def load_uploaded_save(raw: bytes) -> None:
+    data = loads_save(raw)
+    quest_path = QUEST_PATHS.get(data["quest_id"])
+    if quest_path is None:
+        raise SaveGameError(f"quête inconnue dans cette version : {data['quest_id']}")
+    restored = restore_game(load_quest(quest_path), data, rng=random.Random())
+    hero_list = [e for e in restored.entities.values() if e.team == Team.HERO]
+    living = [h for h in hero_list if h.alive]
+    if not hero_list:
+        raise SaveGameError("la sauvegarde ne contient aucun héros compatible")
+    selected = (living or hero_list)[0].id
+
+    # Ne remplacer la session qu'après validation complète.
+    st.session_state.game = restored
+    st.session_state.selected_hero = selected
+    st.session_state.save_identity = {
+        "save_id": data["save_id"],
+        "created_at": data["created_at"],
+    }
+    st.session_state.completed_quests = list(data["campaign"].get("completed_quests", []))
+    st.session_state.log = [f"Sauvegarde {data['save_id'][:8]} chargée."]
 
 
 def log(message: str) -> None:
@@ -46,70 +82,58 @@ def log(message: str) -> None:
     del st.session_state.log[50:]
 
 
-def hero_entities(game: Game) -> list[Entity]:
-    return [entity for entity in game.entities.values() if entity.team == Team.HERO]
+def heroes(game: Game) -> list[Entity]:
+    return [e for e in game.entities.values() if e.team == Team.HERO]
 
 
-def monster_entities(game: Game) -> list[Entity]:
-    return [entity for entity in game.entities.values() if entity.team == Team.MONSTER]
+def monsters(game: Game) -> list[Entity]:
+    return [e for e in game.entities.values() if e.team == Team.MONSTER]
 
 
-def selected_hero(game: Game) -> Entity | None:
+def active_hero(game: Game) -> Entity | None:
     hero = game.entities.get(st.session_state.selected_hero)
-    if hero and hero.team == Team.HERO:
-        return hero
-    return None
+    return hero if hero and hero.team == Team.HERO else None
 
 
-def tile_symbol(game: Game, pos: Position, visible_now: set[Position]) -> tuple[str, str, str]:
+def tile(game: Game, pos: Position, visible: set[Position]) -> tuple[str, str, str]:
     if pos not in game.explored_tiles:
-        return ("🌫️", "Inexploré", "#0c0f14")
-
-    if pos in visible_now:
+        return "🌫️", "Inexploré", "#0c0f14"
+    if pos in visible:
         entity = next((e for e in game.entities.values() if e.alive and e.position == pos), None)
         if entity:
-            if entity.team == Team.HERO:
-                return ("🧙", entity.name, "#26374a")
-            return ("👹", entity.name, "#482b2b")
-
+            return ("🧙", entity.name, "#26374a") if entity.team == Team.HERO else ("👹", entity.name, "#482b2b")
     door = game.quest.board.door_at(pos)
     if door:
         if door.secret and not door.revealed:
-            return ("⬛", "Mur", "#111318")
+            return "⬛", "Mur", "#111318"
         if door.secret:
-            return (("🗝️" if not door.open else "▫️"), "Passage secret", "#3a344a")
-        return (("🚪" if not door.open else "▫️"), "Porte ouverte" if door.open else "Porte fermée", "#303846")
-
+            return ("🗝️" if not door.open else "▫️"), "Passage secret", "#3a344a"
+        return ("🚪" if not door.open else "▫️"), ("Porte fermée" if not door.open else "Porte ouverte"), "#303846"
     if pos in game.quest.board.walls:
-        return ("⬛", "Mur", "#111318")
-
+        return "⬛", "Mur", "#111318"
     chest = game.quest.board.chest_at(pos)
     if chest:
-        return (("📦" if not chest.opened else "🗃️"), "Coffre ouvert" if chest.opened else "Coffre", "#3a3428")
-
+        return ("📦" if not chest.opened else "🗃️"), ("Coffre" if not chest.opened else "Coffre ouvert"), "#3a3428"
     trap = game.quest.board.trap_at(pos)
     if trap and trap.revealed and not trap.disarmed:
-        return ("⚠️", "Piège révélé", "#4a3625")
+        return "⚠️", "Piège révélé", "#4a3625"
     if trap and trap.disarmed:
-        return ("✅", "Piège désarmé", "#263d32")
-
+        return "✅", "Piège désarmé", "#263d32"
     zone = game.quest.board.zone_at(pos)
-    title = zone.name if zone else "Sol"
-    return ("·", title, "#252a33")
+    return "·", (zone.name if zone else "Sol"), "#252a33"
 
 
 def render_board(game: Game) -> None:
     selected = game.entities.get(st.session_state.selected_hero)
-    visible_now = game.current_visible_tiles()
+    visible = game.current_visible_tiles()
     rows: list[str] = []
     for y in range(game.quest.board.height):
         cells: list[str] = []
         for x in range(game.quest.board.width):
             pos = Position(x, y)
-            symbol, title, background = tile_symbol(game, pos, visible_now)
-            selected_here = selected is not None and selected.alive and selected.position == pos
-            border = "3px solid #f6c453" if selected_here else "1px solid #3b4252"
-            opacity = "1" if pos in visible_now else ("0.70" if pos in game.explored_tiles else "0.45")
+            symbol, title, background = tile(game, pos, visible)
+            border = "3px solid #f6c453" if selected and selected.alive and selected.position == pos else "1px solid #3b4252"
+            opacity = "1" if pos in visible else ("0.70" if pos in game.explored_tiles else "0.45")
             cells.append(
                 f'<td title="{html.escape(title)}" style="width:54px;height:54px;text-align:center;'
                 f'font-size:27px;border:{border};background:{background};border-radius:7px;opacity:{opacity}">{symbol}</td>'
@@ -123,7 +147,7 @@ def render_board(game: Game) -> None:
     )
 
 
-def log_game_events(events: list[dict]) -> None:
+def handle_events(events: list[dict]) -> None:
     for event in events:
         if event["type"] == "TrapTriggered":
             actor = st.session_state.game.entity(event["actor_id"])
@@ -132,69 +156,47 @@ def log_game_events(events: list[dict]) -> None:
             log(f"🗺️ Nouvelle zone découverte : {event['name']}.")
 
 
-def perform_move(dx: int, dy: int) -> None:
+def move_hero(dx: int, dy: int) -> None:
     game = st.session_state.game
-    hero = selected_hero(game)
+    hero = active_hero(game)
     if not hero:
         return
     try:
         destination = Position(hero.position.x + dx, hero.position.y + dy)
         result = game.move(hero.id, destination)
         log(f"{hero.name} se déplace en ({destination.x}, {destination.y}).")
-        log_game_events(result["events"])
+        handle_events(result["events"])
     except RuleError as exc:
         log(f"Action impossible : {exc}")
 
 
-def adjacent_enemies(game: Game, actor: Entity) -> list[Entity]:
-    visible_now = game.current_visible_tiles()
-    return [
-        entity
-        for entity in game.entities.values()
-        if entity.alive
-        and entity.team != actor.team
-        and entity.position in visible_now
-        and actor.position.manhattan(entity.position) == 1
-    ]
+def adjacent_enemies(game: Game, hero: Entity) -> list[Entity]:
+    visible = game.current_visible_tiles()
+    return [e for e in game.entities.values() if e.alive and e.team != hero.team and e.position in visible and hero.position.manhattan(e.position) == 1]
 
 
-def adjacent_doors(game: Game, actor: Entity):
-    return [
-        door
-        for door in game.quest.board.doors.values()
-        if not door.open and door.visible and actor.position.manhattan(door.position) <= 1
-    ]
+def adjacent_doors(game: Game, hero: Entity):
+    return [d for d in game.quest.board.doors.values() if not d.open and d.visible and hero.position.manhattan(d.position) <= 1]
 
 
-def adjacent_chests(game: Game, actor: Entity):
-    return [
-        chest
-        for chest in game.quest.board.chests.values()
-        if not chest.opened and chest.position in game.explored_tiles and actor.position.manhattan(chest.position) <= 1
-    ]
+def adjacent_chests(game: Game, hero: Entity):
+    return [c for c in game.quest.board.chests.values() if not c.opened and c.position in game.explored_tiles and hero.position.manhattan(c.position) <= 1]
 
 
-def adjacent_revealed_traps(game: Game, actor: Entity):
-    return [
-        trap
-        for trap in game.quest.board.traps.values()
-        if trap.revealed and not trap.disarmed and actor.position.manhattan(trap.position) <= 1
-    ]
+def adjacent_traps(game: Game, hero: Entity):
+    return [t for t in game.quest.board.traps.values() if t.revealed and not t.disarmed and hero.position.manhattan(t.position) <= 1]
 
 
-def attack_target(target_id: str) -> None:
+def attack(target_id: str) -> None:
     game = st.session_state.game
-    hero = selected_hero(game)
+    hero = active_hero(game)
     if not hero:
         return
     target = game.entity(target_id)
     level_before = hero.level
     try:
         result = game.attack(hero.id, target_id)
-        log(
-            f"⚔️ {hero.name} attaque {target.name} : {result.hits} touche(s), "
-            f"{result.guards} parade(s), {result.damage} dégât(s)."
-        )
+        log(f"⚔️ {hero.name} attaque {target.name} : {result.hits} touche(s), {result.guards} parade(s), {result.damage} dégât(s).")
         if not target.alive:
             log(f"☠️ {target.name} est neutralisé. {hero.name} gagne {target.xp_reward} XP.")
             if hero.level > level_before:
@@ -205,36 +207,36 @@ def attack_target(target_id: str) -> None:
 
 def open_door(door_id: str) -> None:
     game = st.session_state.game
-    hero = selected_hero(game)
+    hero = active_hero(game)
     if not hero:
         return
     try:
         result = game.open_door(hero.id, door_id)
         door = game.quest.board.doors[door_id]
         log(f"{'🗝️' if door.secret else '🚪'} {hero.name} ouvre {'un passage secret' if door.secret else 'une porte'}.")
-        log_game_events(result["events"])
+        handle_events(result["events"])
     except RuleError as exc:
         log(f"Ouverture impossible : {exc}")
 
 
-def search_environment() -> None:
+def search() -> None:
     game = st.session_state.game
-    hero = selected_hero(game)
+    hero = active_hero(game)
     if not hero:
         return
-    traps = game.reveal_traps(hero.id)
+    found_traps = game.reveal_traps(hero.id)
     secrets = game.search_secret_doors(hero.id)
-    if traps:
-        log(f"🔎 {hero.name} découvre {len(traps)} piège(s).")
+    if found_traps:
+        log(f"🔎 {hero.name} découvre {len(found_traps)} piège(s).")
     if secrets:
         log(f"🗝️ {hero.name} découvre {len(secrets)} passage(s) secret(s).")
-    if not traps and not secrets:
+    if not found_traps and not secrets:
         log(f"🔎 {hero.name} inspecte les alentours mais ne trouve rien.")
 
 
-def disarm_trap(trap_id: str) -> None:
+def disarm(trap_id: str) -> None:
     game = st.session_state.game
-    hero = selected_hero(game)
+    hero = active_hero(game)
     if not hero:
         return
     try:
@@ -246,15 +248,12 @@ def disarm_trap(trap_id: str) -> None:
 
 def open_chest(chest_id: str) -> None:
     game = st.session_state.game
-    hero = selected_hero(game)
+    hero = active_hero(game)
     if not hero:
         return
     try:
         result = game.open_chest(hero.id, chest_id)
-        item_names = [str(item.get("name", item.get("id", "objet"))) for item in result.get("items_collected", [])]
-        parts: list[str] = []
-        if item_names:
-            parts.append(", ".join(item_names))
+        parts = [str(i.get("name", i.get("id", "objet"))) for i in result.get("items_collected", [])]
         if result.get("gold_gained"):
             parts.append(f"{result['gold_gained']} pièces")
         log(f"📦 {hero.name} ouvre le coffre et obtient : {', '.join(parts) if parts else 'rien'}.")
@@ -262,12 +261,11 @@ def open_chest(chest_id: str) -> None:
         log(f"Coffre inaccessible : {exc}")
 
 
-def equip_item(hero_id: str, item_id: str) -> None:
+def equip(hero_id: str, item_id: str) -> None:
     game = st.session_state.game
-    hero = game.entity(hero_id)
     try:
         game.equip_item(hero_id, item_id)
-        log(f"🛡️ {hero.name} équipe {item_id}.")
+        log(f"🛡️ {game.entity(hero_id).name} équipe {item_id}.")
     except RuleError as exc:
         log(f"Équipement impossible : {exc}")
 
@@ -276,17 +274,15 @@ def monster_turn() -> None:
     game = st.session_state.game
     if game.active_team != Team.HERO:
         return
-
     game.end_team_turn()
     log("👹 Tour des monstres.")
-
-    for monster in monster_entities(game):
+    for monster in monsters(game):
         if not monster.alive or monster.position not in game.explored_tiles:
             continue
-        heroes = [hero for hero in hero_entities(game) if hero.alive]
-        if not heroes:
+        living = [h for h in heroes(game) if h.alive]
+        if not living:
             break
-        target = min(heroes, key=lambda hero: monster.position.manhattan(hero.position))
+        target = min(living, key=lambda h: monster.position.manhattan(h.position))
         if monster.position.manhattan(target.position) == 1:
             try:
                 result = game.attack(monster.id, target.id)
@@ -296,141 +292,139 @@ def monster_turn() -> None:
             except RuleError as exc:
                 log(f"Erreur IA : {exc}")
             continue
-
-        candidates = [
-            pos
-            for pos in game.quest.board.neighbors(monster.position)
-            if game.quest.board.is_walkable(pos, game.entities, mover_id=monster.id)
-        ]
+        candidates = [p for p in game.quest.board.neighbors(monster.position) if game.quest.board.is_walkable(p, game.entities, mover_id=monster.id)]
         if candidates:
-            destination = min(candidates, key=lambda pos: pos.manhattan(target.position))
+            destination = min(candidates, key=lambda p: p.manhattan(target.position))
             if destination.manhattan(target.position) < monster.position.manhattan(target.position):
                 try:
                     game.move(monster.id, destination)
                     log(f"👣 {monster.name} se rapproche de {target.name}.")
                 except RuleError as exc:
                     log(f"Erreur IA : {exc}")
-
     game.end_team_turn()
     log(f"Début du round {game.round_number}.")
 
 
 def quest_status(game: Game) -> tuple[bool, bool, bool]:
-    chest_open = all(chest.opened for chest in game.quest.board.chests.values())
-    monsters_down = all(not monster.alive for monster in monster_entities(game))
-    hero_alive = any(hero.alive for hero in hero_entities(game))
-    return chest_open, monsters_down, hero_alive
+    return (
+        all(c.opened for c in game.quest.board.chests.values()),
+        all(not m.alive for m in monsters(game)),
+        any(h.alive for h in heroes(game)),
+    )
 
 
 ensure_state()
 game: Game = st.session_state.game
+st.title("⚔️ Heroquest — Dungeon Engine")
+st.caption("Prototype V0.3 · sauvegarde JSON, exploration, secrets, équipement et progression")
 
-st.title("⚔️ Code RPG — Dungeon Engine")
-st.caption("Prototype V0.2 · exploration, brouillard de guerre, secrets, équipement et progression")
+if "load_notice" in st.session_state:
+    st.success(st.session_state.pop("load_notice"))
 
 with st.sidebar:
     st.header(game.quest.title)
     st.write(game.quest.description)
     st.subheader("Objectifs")
     chest_open, monsters_down, hero_alive = quest_status(game)
-    objective_state = [chest_open, monsters_down, hero_alive]
-    for done, text in zip(objective_state, game.quest.objectives):
+    for done, text in zip((chest_open, monsters_down, hero_alive), game.quest.objectives):
         st.write(("✅ " if done else "⬜ ") + text)
 
     st.divider()
     st.subheader("Exploration")
-    if game.discovered_zone_ids:
-        for zone_id in game.discovered_zone_ids:
-            zone = game.quest.board.zones.get(zone_id)
-            if zone:
-                st.write(f"🗺️ {zone.name}")
-    else:
-        st.caption("Aucune zone découverte")
+    for zone_id in sorted(game.discovered_zone_ids):
+        zone = game.quest.board.zones.get(zone_id)
+        if zone:
+            st.write(f"🗺️ {zone.name}")
     st.caption(f"{len(game.explored_tiles)} cases cartographiées")
-
-    st.divider()
     st.metric("Round", game.round_number)
     st.write(f"Équipe active : **{game.active_team.value}**")
+
+    st.divider()
+    st.subheader("Partie")
+    identity = st.session_state.save_identity
+    save_json = dumps_save(
+        game,
+        save_id=identity["save_id"],
+        created_at=identity["created_at"],
+        completed_quests=st.session_state.completed_quests,
+    )
+    st.download_button(
+        "💾 Télécharger la sauvegarde",
+        data=save_json,
+        file_name=f"heroquest-{game.quest.id}-{identity['save_id'][:8]}.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+    uploaded = st.file_uploader("📂 Charger une sauvegarde", type=["json"], key="save_upload")
+    if uploaded is not None and st.button("Charger cette sauvegarde", use_container_width=True):
+        try:
+            load_uploaded_save(uploaded.getvalue())
+        except SaveGameError as exc:
+            st.error(f"Sauvegarde refusée : {exc}")
+        else:
+            st.session_state.load_notice = "Sauvegarde chargée avec succès."
+            st.rerun()
     if st.button("🔄 Recommencer la quête", use_container_width=True):
         reset_game()
         st.rerun()
 
 left, right = st.columns([2.2, 1], gap="large")
-
 with left:
     st.subheader("Plateau")
     render_board(game)
     st.caption("🌫️ inexploré · 🧙 héros · 👹 monstre · 🚪 porte · 🗝️ passage secret · 📦 coffre · ⚠️ piège · ⬛ mur")
-
-    living_heroes = [hero for hero in hero_entities(game) if hero.alive]
-    if living_heroes:
-        hero_labels = {
-            hero.id: f"{hero.name} — niv. {hero.level} — {hero.hp}/{hero.max_hp} PV"
-            for hero in living_heroes
-        }
-        selected_id = st.radio(
-            "Héros actif",
-            options=list(hero_labels),
-            format_func=lambda hero_id: hero_labels[hero_id],
-            horizontal=True,
-            key="selected_hero",
-        )
+    living = [h for h in heroes(game) if h.alive]
+    if living:
+        labels = {h.id: f"{h.name} — niv. {h.level} — {h.hp}/{h.max_hp} PV" for h in living}
+        selected_id = st.radio("Héros actif", list(labels), format_func=lambda hero_id: labels[hero_id], horizontal=True, key="selected_hero")
         hero = game.entity(selected_id)
 
         st.markdown("#### Déplacement")
         c1, c2, c3 = st.columns(3)
         with c2:
-            if st.button("⬆️", key="up", use_container_width=True, disabled=game.active_team != Team.HERO):
-                perform_move(0, -1)
+            if st.button("⬆️", use_container_width=True, disabled=game.active_team != Team.HERO):
+                move_hero(0, -1)
                 st.rerun()
         with c1:
-            if st.button("⬅️", key="left", use_container_width=True, disabled=game.active_team != Team.HERO):
-                perform_move(-1, 0)
+            if st.button("⬅️", use_container_width=True, disabled=game.active_team != Team.HERO):
+                move_hero(-1, 0)
                 st.rerun()
         with c2:
-            if st.button("⬇️", key="down", use_container_width=True, disabled=game.active_team != Team.HERO):
-                perform_move(0, 1)
+            if st.button("⬇️", use_container_width=True, disabled=game.active_team != Team.HERO):
+                move_hero(0, 1)
                 st.rerun()
         with c3:
-            if st.button("➡️", key="right", use_container_width=True, disabled=game.active_team != Team.HERO):
-                perform_move(1, 0)
+            if st.button("➡️", use_container_width=True, disabled=game.active_team != Team.HERO):
+                move_hero(1, 0)
                 st.rerun()
 
+        nearby_enemies = adjacent_enemies(game, hero)
+        nearby_doors = adjacent_doors(game, hero)
+        nearby_chests = adjacent_chests(game, hero)
+        nearby_traps = adjacent_traps(game, hero)
         st.markdown("#### Actions")
-        enemies = adjacent_enemies(game, hero)
-        doors = adjacent_doors(game, hero)
-        chests = adjacent_chests(game, hero)
-        traps = adjacent_revealed_traps(game, hero)
-
-        action_cols = st.columns(4)
-        with action_cols[0]:
+        a1, a2, a3, a4 = st.columns(4)
+        with a1:
             if st.button("🔎 Fouiller", use_container_width=True, disabled=game.active_team != Team.HERO):
-                search_environment()
+                search()
                 st.rerun()
-        with action_cols[1]:
-            if doors and st.button("🚪 Ouvrir", use_container_width=True, disabled=game.active_team != Team.HERO):
-                open_door(doors[0].id)
+        with a2:
+            if nearby_doors and st.button("🚪 Ouvrir", use_container_width=True, disabled=game.active_team != Team.HERO):
+                open_door(nearby_doors[0].id)
                 st.rerun()
-        with action_cols[2]:
-            if chests and st.button("📦 Coffre", use_container_width=True, disabled=game.active_team != Team.HERO):
-                open_chest(chests[0].id)
+        with a3:
+            if nearby_chests and st.button("📦 Coffre", use_container_width=True, disabled=game.active_team != Team.HERO):
+                open_chest(nearby_chests[0].id)
                 st.rerun()
-        with action_cols[3]:
-            if traps and st.button("🛠️ Désarmer", use_container_width=True, disabled=game.active_team != Team.HERO):
-                disarm_trap(traps[0].id)
+        with a4:
+            if nearby_traps and st.button("🛠️ Désarmer", use_container_width=True, disabled=game.active_team != Team.HERO):
+                disarm(nearby_traps[0].id)
                 st.rerun()
 
-        if enemies:
-            st.markdown("#### Combat")
-            for enemy in enemies:
-                if st.button(
-                    f"⚔️ Attaquer {enemy.name} ({enemy.hp}/{enemy.max_hp} PV)",
-                    key=f"atk-{enemy.id}",
-                    disabled=game.active_team != Team.HERO,
-                ):
-                    attack_target(enemy.id)
-                    st.rerun()
-
+        for enemy in nearby_enemies:
+            if st.button(f"⚔️ Attaquer {enemy.name} ({enemy.hp}/{enemy.max_hp} PV)", key=f"atk-{enemy.id}", disabled=game.active_team != Team.HERO):
+                attack(enemy.id)
+                st.rerun()
         if st.button("⏭️ Terminer le tour des héros", type="primary", use_container_width=True):
             monster_turn()
             st.rerun()
@@ -439,38 +433,27 @@ with left:
 
 with right:
     st.subheader("Équipe")
-    for hero in hero_entities(game):
+    for hero in heroes(game):
         st.markdown(f"### {hero.name} · niv. {hero.level}")
         st.progress(hero.hp / hero.max_hp if hero.max_hp else 0, text=f"{hero.hp}/{hero.max_hp} PV")
-        st.caption(
-            f"⚔️ {hero.effective_attack_dice} dés · 🛡️ {hero.effective_defense_dice} dés · "
-            f"✨ {hero.xp}/{hero.next_level_xp} XP · 🪙 {hero.gold}"
-        )
-
-        if hero.equipment:
-            for slot, item in hero.equipment.items():
-                st.caption(f"{slot}: {item.get('name', item.get('id', 'Objet'))}")
-        else:
-            st.caption("Aucun équipement")
-
-        if hero.inventory:
-            st.write("**Sac**")
-            for item in list(hero.inventory):
-                item_name = item.get("name", item.get("id", "Objet"))
-                col_item, col_action = st.columns([2, 1])
-                col_item.caption(f"• {item_name}")
-                if item.get("slot") and col_action.button("Équiper", key=f"equip-{hero.id}-{item.get('id')}"):
-                    equip_item(hero.id, str(item.get("id")))
-                    st.rerun()
+        st.caption(f"⚔️ {hero.effective_attack_dice} dés · 🛡️ {hero.effective_defense_dice} dés · ✨ {hero.xp}/{hero.next_level_xp} XP · 🪙 {hero.gold}")
+        for slot, item in hero.equipment.items():
+            st.caption(f"{slot}: {item.get('name', item.get('id', 'Objet'))}")
+        for item in list(hero.inventory):
+            item_name = item.get("name", item.get("id", "Objet"))
+            col1, col2 = st.columns([2, 1])
+            col1.caption(f"• {item_name}")
+            if item.get("slot") and col2.button("Équiper", key=f"equip-{hero.id}-{item.get('id')}"):
+                equip(hero.id, str(item.get("id")))
+                st.rerun()
         st.divider()
 
     st.subheader("Menaces découvertes")
-    known_monsters = [monster for monster in monster_entities(game) if monster.position in game.explored_tiles or not monster.alive]
-    if known_monsters:
-        for monster in known_monsters:
-            state = "☠️" if not monster.alive else "👹"
-            st.write(f"{state} **{monster.name}** — {monster.hp}/{monster.max_hp} PV")
-    else:
+    known = [m for m in monsters(game) if m.position in game.explored_tiles or not m.alive]
+    for monster in known:
+        state = "☠️" if not monster.alive else "👹"
+        st.write(f"{state} **{monster.name}** — {monster.hp}/{monster.max_hp} PV")
+    if not known:
         st.caption("Aucune menace identifiée")
 
     st.divider()
