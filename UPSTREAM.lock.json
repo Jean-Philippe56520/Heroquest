@@ -1,0 +1,25 @@
+{
+  "generated": "2026-09-14",
+  "upstreams": [
+    {
+      "name": "hghero/HeroQuest",
+      "url": "https://github.com/hghero/HeroQuest.git",
+      "license": "LGPL-2.1",
+      "commit": "a89df683c6eaa66942ebec80edf6dd31e8eb5eda",
+      "policy": "reference-only; do not import proprietary assets"
+    },
+    {
+      "name": "g1augusto/HeroQuestCS50Builder",
+      "url": "https://github.com/g1augusto/HeroQuestCS50Builder.git",
+      "license": "MIT",
+      "commit": "19e475fc07b8263d98ca2497de544a53f55e3677",
+      "policy": "reference-only by default; reusable code requires attribution preservation"
+    },
+    {
+      "name": "henriquesimoes/heroquest",
+      "url": "https://github.com/henriquesimoes/heroquest.git",
+      "license": null,
+      "policy": "documentation only; no code import"
+    }
+  ]
+}
