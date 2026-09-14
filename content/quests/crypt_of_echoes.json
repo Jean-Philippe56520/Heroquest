@@ -1,0 +1,70 @@
+{
+  "id": "crypt-of-echoes",
+  "title": "La Crypte des Echos",
+  "description": "Une expedition originale concue pour tester le moteur sans utiliser de contenu HeroQuest protege.",
+  "objectives": [
+    "Ouvrir le coffre de la crypte.",
+    "Neutraliser le Gardien d'os.",
+    "Garder au moins un heros en vie."
+  ],
+  "board": {
+    "width": 8,
+    "height": 6,
+    "walls": [[3,0],[3,1],[3,3],[3,4],[3,5]],
+    "doors": [
+      {"id": "door-crypt", "position": [3,2], "open": false, "locked": false}
+    ],
+    "traps": [
+      {"id": "trap-needle", "position": [5,2], "damage": 1, "revealed": false}
+    ],
+    "chests": [
+      {
+        "id": "chest-echo",
+        "position": [6,1],
+        "loot": [
+          {"id": "silver-key", "name": "Cle d'argent", "type": "quest_item"},
+          {"id": "coins", "name": "Pieces anciennes", "type": "currency", "amount": 25}
+        ]
+      }
+    ]
+  },
+  "entities": [
+    {
+      "id": "hero-warden",
+      "name": "Arven",
+      "team": "hero",
+      "position": [1,2],
+      "max_hp": 6,
+      "attack_dice": 3,
+      "defense_dice": 2,
+      "move_points": 6,
+      "tags": ["hero", "melee"]
+    },
+    {
+      "id": "hero-scout",
+      "name": "Lysa",
+      "team": "hero",
+      "position": [1,3],
+      "max_hp": 4,
+      "attack_dice": 2,
+      "defense_dice": 2,
+      "move_points": 7,
+      "tags": ["hero", "scout"]
+    },
+    {
+      "id": "monster-bone-warden",
+      "name": "Gardien d'os",
+      "team": "monster",
+      "position": [6,2],
+      "max_hp": 3,
+      "attack_dice": 2,
+      "defense_dice": 1,
+      "move_points": 5,
+      "tags": ["undead"]
+    }
+  ],
+  "metadata": {
+    "author": "Code RPG",
+    "schema_version": 1
+  }
+}
