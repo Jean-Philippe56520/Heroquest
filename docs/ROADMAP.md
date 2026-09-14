@@ -6,19 +6,23 @@
 - [x] combat et points de vie
 - [x] pieges et coffres
 - [x] format de quete JSON
-- [ ] ligne de vue et brouillard de guerre
-- [ ] portes secretes et recherche
-- [ ] inventaire / objets / equipement
-- [ ] sorts et effets temporaires
+- [x] vision locale et brouillard de guerre
+- [x] zones/salles decouvertes
+- [x] portes secretes et recherche
+- [x] inventaire / objets / equipement
+- [x] XP et niveaux
+- [ ] sorts, consommables et effets temporaires
 
 ## Phase 2 - Contenu et outils
-- [ ] schema JSON versionne
+- [x] schema JSON versionne (v2)
 - [ ] validateur de contenu
 - [ ] editeur de carte Web
 - [ ] campagnes multi-quetes
+- [ ] sauvegarde / reprise de campagne
 
 ## Phase 3 - Persistant / multijoueur
-- [ ] journal d'evenements
+- [x] journal d'evenements cote interface
+- [ ] journal d'evenements persistant
 - [ ] sauvegarde SQL
 - [ ] API FastAPI
 - [ ] WebSocket temps reel

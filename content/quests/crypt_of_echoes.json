@@ -10,9 +10,10 @@
   "board": {
     "width": 8,
     "height": 6,
-    "walls": [[3,0],[3,1],[3,3],[3,4],[3,5]],
+    "walls": [[3,0],[3,1],[3,3],[3,5]],
     "doors": [
-      {"id": "door-crypt", "position": [3,2], "open": false, "locked": false}
+      {"id": "door-crypt", "position": [3,2], "open": false, "locked": false},
+      {"id": "door-secret", "position": [3,4], "open": false, "locked": false, "secret": true, "revealed": false}
     ],
     "traps": [
       {"id": "trap-needle", "position": [5,2], "damage": 1, "revealed": false}
@@ -22,9 +23,23 @@
         "id": "chest-echo",
         "position": [6,1],
         "loot": [
-          {"id": "silver-key", "name": "Cle d'argent", "type": "quest_item"},
+          {"id": "echo-blade", "name": "Lame des echos", "type": "equipment", "slot": "weapon", "attack_bonus": 1},
           {"id": "coins", "name": "Pieces anciennes", "type": "currency", "amount": 25}
         ]
+      }
+    ],
+    "zones": [
+      {
+        "id": "entry-hall",
+        "name": "Hall des Veilleurs",
+        "kind": "room",
+        "tiles": [[0,0],[1,0],[2,0],[0,1],[1,1],[2,1],[0,2],[1,2],[2,2],[0,3],[1,3],[2,3],[0,4],[1,4],[2,4],[0,5],[1,5],[2,5]]
+      },
+      {
+        "id": "crypt-room",
+        "name": "Crypte des Echos",
+        "kind": "room",
+        "tiles": [[4,0],[5,0],[6,0],[7,0],[4,1],[5,1],[6,1],[7,1],[4,2],[5,2],[6,2],[7,2],[4,3],[5,3],[6,3],[7,3],[4,4],[5,4],[6,4],[7,4],[4,5],[5,5],[6,5],[7,5]]
       }
     ]
   },
@@ -60,11 +75,12 @@
       "attack_dice": 2,
       "defense_dice": 1,
       "move_points": 5,
+      "xp_reward": 6,
       "tags": ["undead"]
     }
   ],
   "metadata": {
     "author": "Code RPG",
-    "schema_version": 1
+    "schema_version": 2
   }
 }
