@@ -31,10 +31,30 @@ class Entity:
     defense_dice: int
     move_points: int = 6
     tags: set[str] = field(default_factory=set)
+    xp: int = 0
+    level: int = 1
+    gold: int = 0
+    xp_reward: int = 1
+    inventory: list[dict[str, Any]] = field(default_factory=list)
+    equipment: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def alive(self) -> bool:
         return self.hp > 0
+
+    @property
+    def effective_attack_dice(self) -> int:
+        bonus = sum(int(item.get("attack_bonus", 0)) for item in self.equipment.values())
+        return max(0, self.attack_dice + bonus)
+
+    @property
+    def effective_defense_dice(self) -> int:
+        bonus = sum(int(item.get("defense_bonus", 0)) for item in self.equipment.values())
+        return max(0, self.defense_dice + bonus)
+
+    @property
+    def next_level_xp(self) -> int:
+        return self.level * 10
 
     def take_damage(self, amount: int) -> int:
         amount = max(0, amount)
@@ -49,6 +69,12 @@ class Door:
     position: Position
     open: bool = False
     locked: bool = False
+    secret: bool = False
+    revealed: bool = True
+
+    @property
+    def visible(self) -> bool:
+        return not self.secret or self.revealed
 
 
 @dataclass(slots=True)
@@ -66,3 +92,11 @@ class Chest:
     position: Position
     loot: list[dict[str, Any]] = field(default_factory=list)
     opened: bool = False
+
+
+@dataclass(slots=True)
+class Zone:
+    id: str
+    name: str
+    tiles: set[Position] = field(default_factory=set)
+    kind: str = "room"

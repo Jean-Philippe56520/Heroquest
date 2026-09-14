@@ -26,8 +26,8 @@ def resolve_melee(attacker: Entity, defender: Entity, rng: random.Random | None 
         raise ValueError("melee attack requires orthogonal adjacency")
 
     rng = rng or random.Random()
-    attack_rolls = tuple(roll_combat_dice(attacker.attack_dice, rng))
-    defense_rolls = tuple(roll_combat_dice(defender.defense_dice, rng))
+    attack_rolls = tuple(roll_combat_dice(attacker.effective_attack_dice, rng))
+    defense_rolls = tuple(roll_combat_dice(defender.effective_defense_dice, rng))
     hits = count_face(attack_rolls, "hit")
     guards = count_face(defense_rolls, "guard")
     damage = max(0, hits - guards)

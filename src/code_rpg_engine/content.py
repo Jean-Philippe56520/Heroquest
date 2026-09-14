@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .board import Board
-from .models import Chest, Door, Entity, Position, Team, Trap
+from .models import Chest, Door, Entity, Position, Team, Trap, Zone
 
 
 @dataclass(slots=True)
@@ -37,11 +37,14 @@ def load_quest(path: str | Path) -> Quest:
     )
 
     for raw in board_data.get("doors", []):
+        secret = bool(raw.get("secret", False))
         door = Door(
             id=raw["id"],
             position=_pos(raw["position"]),
             open=bool(raw.get("open", False)),
             locked=bool(raw.get("locked", False)),
+            secret=secret,
+            revealed=bool(raw.get("revealed", not secret)),
         )
         board.doors[door.id] = door
 
@@ -51,6 +54,7 @@ def load_quest(path: str | Path) -> Quest:
             position=_pos(raw["position"]),
             damage=int(raw.get("damage", 1)),
             revealed=bool(raw.get("revealed", False)),
+            disarmed=bool(raw.get("disarmed", False)),
         )
         board.traps[trap.id] = trap
 
@@ -59,8 +63,18 @@ def load_quest(path: str | Path) -> Quest:
             id=raw["id"],
             position=_pos(raw["position"]),
             loot=list(raw.get("loot", [])),
+            opened=bool(raw.get("opened", False)),
         )
         board.chests[chest.id] = chest
+
+    for raw in board_data.get("zones", []):
+        zone = Zone(
+            id=raw["id"],
+            name=raw.get("name", raw["id"]),
+            tiles={_pos(value) for value in raw.get("tiles", [])},
+            kind=raw.get("kind", "room"),
+        )
+        board.zones[zone.id] = zone
 
     entities: dict[str, Entity] = {}
     for raw in payload.get("entities", []):
@@ -75,6 +89,12 @@ def load_quest(path: str | Path) -> Quest:
             defense_dice=int(raw.get("defense_dice", 1)),
             move_points=int(raw.get("move_points", 6)),
             tags=set(raw.get("tags", [])),
+            xp=int(raw.get("xp", 0)),
+            level=int(raw.get("level", 1)),
+            gold=int(raw.get("gold", 0)),
+            xp_reward=int(raw.get("xp_reward", 1)),
+            inventory=list(raw.get("inventory", [])),
+            equipment=dict(raw.get("equipment", {})),
         )
         if entity.id in entities:
             raise ValueError(f"duplicate entity id: {entity.id}")
